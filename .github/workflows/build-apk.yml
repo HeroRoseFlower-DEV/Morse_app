@@ -20,6 +20,37 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Create Mock google-services.json
+      run: |
+        mkdir -p app
+        cat <<EOF > app/google-services.json
+        {
+          "project_info": {
+            "project_number": "123456789012",
+            "project_id": "mock-app",
+            "storage_bucket": "mock-app.appspot.com"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:1234567890123456",
+                "android_client_info": {
+                  "package_name": "com.example.morse"
+                }
+              },
+              "oauth_client": [],
+              "api_key": [
+                {
+                  "current_key": "AIzaSyMockKeyForBuildingApkOnly"
+                }
+              ],
+              "services": {}
+            }
+          ],
+          "configuration_version": "1"
+        }
+        EOF
+
     - name: Ensure Gradle Wrapper exists
       run: gradle wrapper
 
