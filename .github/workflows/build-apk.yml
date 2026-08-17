@@ -15,9 +15,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # توجه: ANDROID_SDK_ROOT از اینجا حذف شده تا خطای Unrecognized named-value: 'runner' رخ ندهد.
-    # این متغیر در مرحله نصب SDK تنظیم می‌شود.
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -62,15 +59,9 @@ jobs:
           echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
           echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-      - name: Setup Gradle Wrapper (Fallback)
-        # اگر فایل gradlew در ریپازیتوری شما وجود نداشته باشد، این مرحله آن را خودکار می‌سازد
-        run: |
-          if [ ! -f "gradlew" ]; then
-            echo "gradlew not found in repository. Generating wrapper..."
-            gradle wrapper --gradle-version 8.5
-          else
-            echo "gradlew found in repository. Skipping wrapper generation."
-          fi
+      - name: Setup and Update Gradle Wrapper
+        # این مرحله بدون شرط، گریدل را دقیقاً به نسخه مورد نیاز پلاگین شما (9.3.1) ارتقا می‌دهد
+        run: gradle wrapper --gradle-version 9.3.1
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
