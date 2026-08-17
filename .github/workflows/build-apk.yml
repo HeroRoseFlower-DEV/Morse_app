@@ -60,8 +60,9 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    - name: Build Debug APK (Headless Mode)
+      # اضافه کردن دستورات headless و no-daemon برای جلوگیری از کرش گرافیکی
+      run: ./gradlew assembleDebug -Djava.awt.headless=true --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
