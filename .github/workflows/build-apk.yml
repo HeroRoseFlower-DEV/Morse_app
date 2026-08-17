@@ -1,99 +1,85 @@
-name: Android APK Build
+name: Build Android APK
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch: # امکان اجرای دستی ورک‌فلو را می‌دهد
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # حل خطای ناشناخته بودن runner. این تنظیم به صورت جهانی اعمال می‌شود
-    env:
-      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
+    
+    # توجه: ANDROID_SDK_ROOT از اینجا حذف شده تا خطای Unrecognized named-value: 'runner' رخ ندهد.
+    # این متغیر در مرحله نصب SDK تنظیم می‌شود.
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
 
-    - name: Install Android SDK and Accept Licenses
-      # دانلود و نصب خودکار Android SDK و تایید لایسنس‌ها با متغیر ایمن RUNNER_TEMP
-      run: |
-        set -euo pipefail
-        SDK_ROOT="${RUNNER_TEMP}/android-sdk"
-        mkdir -p "$SDK_ROOT"
-        echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
-        echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
-        
-        cd "$SDK_ROOT"
-        curl -sS -o cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip"
-        unzip -q cmdline-tools.zip || true
-        mkdir -p cmdline-tools/latest
-        mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-        
-        SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-        yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses || true
-        "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-        
-        echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
-        echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+      - name: Install Android command-line tools and SDK components
+        run: |
+          set -euo pipefail
+          
+          # استفاده از RUNNER_TEMP که همیشه در محیط شل اکشن‌ها معتبر است
+          SDK_ROOT="${RUNNER_TEMP}/android-sdk"
+          mkdir -p "$SDK_ROOT"
+          
+          # ذخیره در GITHUB_ENV برای دسترسی مراحل بعدی (مثلاً گریدل)
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
 
-    - name: Generate Gradle Wrapper Automatically
-      # حل مشکل نبودن gradlew در مخزن شما با ساخت آن روی سرور
-      run: gradle wrapper --gradle-version 8.5
+          cd "$SDK_ROOT"
 
-    - name: Configure Gradle Environment
-      # تنظیمات لازم برای جلوگیری از کرش کردن KSP و کاتلین در محیط لینوکس
-      run: |
-        mkdir -p ~/.gradle
-        echo "org.gradle.jvmargs=-Xmx3072m -Djava.awt.headless=true" >> ~/.gradle/gradle.properties
-        echo "kotlin.compiler.execution.strategy=daemon" >> ~/.gradle/gradle.properties
-        echo "org.gradle.daemon=true" >> ~/.gradle/gradle.properties
+          # دانلود command-line tools لینوکس
+          curl -sS -o cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip"
+          unzip -q cmdline-tools.zip || (unzip cmdline-tools.zip -d .)
 
-    - name: Create Mock google-services.json
-      # حل ارور Firebase
-      run: |
-        mkdir -p app
-        cat <<EOF > app/google-services.json
-        {
-          "project_info": {
-            "project_number": "123456789012",
-            "project_id": "mock-app",
-            "storage_bucket": "mock-app.appspot.com"
-          },
-          "client": [
-            {
-              "client_info": {
-                "mobilesdk_app_id": "1:123456789012:android:1234567890123456",
-                "android_client_info": {
-                  "package_name": "com.aistudio.morsetranslator.mrsxqz"
-                }
-              }
-            }
-          ],
-          "configuration_version": "1"
-        }
-        EOF
+          mkdir -p cmdline-tools/latest
+          # انتقال فایل‌های اکسترکت شده به ساختار استاندارد SDK
+          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
 
-    - name: Generate Debug Keystore
-      # حل ارور امضای دیجیتال برنامه
-      run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+          # نصب پکیج‌های ضروری (نسخه 36 تنظیم شده است، در صورت نیاز تغییر دهید)
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+          # تایید خودکار تمامی لایسنس‌های اندروید
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses || true
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: Morse_app-APK
-        path: app/build/outputs/apk/**/*.apk
+          # اضافه کردن مسیرها به PATH گیت‌هاب
+          echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+
+      - name: Setup Gradle Wrapper (Fallback)
+        # اگر فایل gradlew در ریپازیتوری شما وجود نداشته باشد، این مرحله آن را خودکار می‌سازد
+        run: |
+          if [ ! -f "gradlew" ]; then
+            echo "gradlew not found in repository. Generating wrapper..."
+            gradle wrapper --gradle-version 8.5
+          else
+            echo "gradlew found in repository. Skipping wrapper generation."
+          fi
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Morse_app-APK
+          path: app/build/outputs/apk/**/*.apk
