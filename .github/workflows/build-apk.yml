@@ -8,7 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # این دستور تمام پردازش‌های جاوا (حتی مخفی‌ها) را مجبور می‌کند گرافیک را خاموش کنند
     env:
       JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
 
@@ -23,13 +22,12 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Configure Gradle Properties
-      # تزریق تنظیمات به فایل‌های پایه سیستم برای محدود کردن افزونه KSP
+    - name: Configure Gradle Environment
       run: |
         mkdir -p ~/.gradle
-        echo "org.gradle.jvmargs=-Xmx2048m -Djava.awt.headless=true" >> ~/.gradle/gradle.properties
-        echo "kotlin.daemon.jvmargs=-Djava.awt.headless=true" >> ~/.gradle/gradle.properties
-        echo "kotlin.compiler.execution.strategy=in-process" >> ~/.gradle/gradle.properties
+        echo "org.gradle.jvmargs=-Xmx3072m -Djava.awt.headless=true" >> ~/.gradle/gradle.properties
+        echo "kotlin.compiler.execution.strategy=daemon" >> ~/.gradle/gradle.properties
+        echo "org.gradle.daemon=true" >> ~/.gradle/gradle.properties
 
     - name: Create Mock google-services.json
       run: |
@@ -65,14 +63,14 @@ jobs:
     - name: Generate Debug Keystore
       run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
 
-    - name: Ensure Gradle Wrapper exists
-      run: gradle wrapper
+    - name: Set Compatible Gradle Version
+      run: gradle wrapper --gradle-version 8.5
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --no-daemon
+      run: ./gradlew assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
