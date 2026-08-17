@@ -8,11 +8,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up JDK 17
@@ -22,57 +24,84 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Configure Gradle Environment
+    - name: Create Gradle home and cache dirs
       run: |
         mkdir -p ~/.gradle
+        mkdir -p ~/.gradle/wrapper
         echo "org.gradle.jvmargs=-Xmx3072m -Djava.awt.headless=true" >> ~/.gradle/gradle.properties
         echo "kotlin.compiler.execution.strategy=daemon" >> ~/.gradle/gradle.properties
         echo "org.gradle.daemon=true" >> ~/.gradle/gradle.properties
 
-    - name: Create Mock google-services.json
+    - name: Install Android command-line tools and SDK components
       run: |
-        mkdir -p app
-        cat <<EOF > app/google-services.json
-        {
-          "project_info": {
-            "project_number": "123456789012",
-            "project_id": "mock-app",
-            "storage_bucket": "mock-app.appspot.com"
-          },
-          "client": [
-            {
-              "client_info": {
-                "mobilesdk_app_id": "1:123456789012:android:1234567890123456",
-                "android_client_info": {
-                  "package_name": "com.aistudio.morsetranslator.mrsxqz"
-                }
-              },
-              "oauth_client": [],
-              "api_key": [
-                {
-                  "current_key": "AIzaSyMockKeyForBuildingApkOnly"
-                }
-              ],
-              "services": {}
-            }
-          ],
-          "configuration_version": "1"
-        }
-        EOF
+        set -euo pipefail
+        SDK_ROOT="${ANDROID_SDK_ROOT}"
+        mkdir -p "$SDK_ROOT"
+        cd "$SDK_ROOT"
 
-    - name: Generate Debug Keystore
-      run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+        # Download command-line tools (specific numeric build used; update if needed)
+        curl -sS -o cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip"
+        unzip -q cmdline-tools.zip || (unzip cmdline-tools.zip -d .)
+        # place in expected layout: $SDK_ROOT/cmdline-tools/latest/...
+        mkdir -p cmdline-tools/latest
+        # move contents into cmdline-tools/latest (some zips create cmdline-tools/)
+        if [ -d "cmdline-tools" ]; then
+          # if unzip produced a cmdline-tools directory, move its children
+          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+        else
+          mv * cmdline-tools/latest/ 2>/dev/null || true
+        fi
 
-    - name: Set Compatible Gradle Version
-      run: gradle wrapper --gradle-version 8.5
+        # Make sdkmanager available (use full path)
+        SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+        # Install essential components matching compileSdk = 36
+        "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+        # Accept licenses
+        yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses || true
+
+        # Export platform-tools to PATH for later steps
+        echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
+        echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+
+    - name: Generate Debug Keystore (for assembleDebug)
+      run: |
+        keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey \
+          -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug" || true
+
+    - name: Ensure Gradle available (use project gradlew if present, otherwise download Gradle 8.5)
+      id: ensure-gradle
+      run: |
+        set -euo pipefail
+        if [ -f "./gradlew" ]; then
+          chmod +x ./gradlew
+          echo "GRADLE_CMD=./gradlew" >> $GITHUB_ENV
+          echo "Using project gradlew"
+        else
+          echo "gradlew not found — downloading Gradle 8.5"
+          curl -sS -o gradle-8.5-bin.zip "https://services.gradle.org/distributions/gradle-8.5-bin.zip"
+          unzip -q gradle-8.5-bin.zip -d gradle
+          GRADLE_HOME="$(pwd)/gradle/gradle-8.5"
+          echo "$GRADLE_HOME/bin" >> $GITHUB_PATH
+          echo "GRADLE_CMD=$GRADLE_HOME/bin/gradle" >> $GITHUB_ENV
+        fi
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      env:
+        ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        JAVA_HOME: ${{ steps.setup-java.outputs.path || '' }}
+      run: |
+        set -ex
+        # use GRADLE_CMD set in previous step
+        if [ -z "${GRADLE_CMD:-}" ]; then
+          echo "GRADLE_CMD not set" >&2
+          exit 1
+        fi
+        # Clean then assemble
+        $GRADLE_CMD clean assembleDebug --no-daemon
 
-    - name: Upload APK
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: Morse_app-APK
