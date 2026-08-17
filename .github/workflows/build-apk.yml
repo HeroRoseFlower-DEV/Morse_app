@@ -35,7 +35,7 @@ jobs:
               "client_info": {
                 "mobilesdk_app_id": "1:123456789012:android:1234567890123456",
                 "android_client_info": {
-                  "package_name": "com.example.morse"
+                  "package_name": "com.aistudio.morsetranslator.mrsxqz"
                 }
               },
               "oauth_client": [],
