@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # این دستور تمام پردازش‌های جاوا (حتی مخفی‌ها) را مجبور می‌کند گرافیک را خاموش کنند
+    env:
+      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
 
     steps:
     - name: Checkout Repository
@@ -19,6 +22,14 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
+
+    - name: Configure Gradle Properties
+      # تزریق تنظیمات به فایل‌های پایه سیستم برای محدود کردن افزونه KSP
+      run: |
+        mkdir -p ~/.gradle
+        echo "org.gradle.jvmargs=-Xmx2048m -Djava.awt.headless=true" >> ~/.gradle/gradle.properties
+        echo "kotlin.daemon.jvmargs=-Djava.awt.headless=true" >> ~/.gradle/gradle.properties
+        echo "kotlin.compiler.execution.strategy=in-process" >> ~/.gradle/gradle.properties
 
     - name: Create Mock google-services.json
       run: |
@@ -60,9 +71,8 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build Debug APK (Headless Mode)
-      # اضافه کردن دستورات headless و no-daemon برای جلوگیری از کرش گرافیکی
-      run: ./gradlew assembleDebug -Djava.awt.headless=true --no-daemon
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
